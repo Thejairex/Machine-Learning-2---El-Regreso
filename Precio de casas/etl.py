@@ -1,74 +1,122 @@
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
 
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import OrdinalEncoder
-
-def load_data(filename: str):
-    return pd.read_csv(filename)
+from sklearn.preprocessing import OrdinalEncoder, OneHotEncoder
+from sklearn.decomposition import PCA
 
 
-def check_missing_values(df):
-    # comprobar la cantidad de valores faltantes
-    missing = df.isna().sum().sort_values(ascending=False)
-    missing = missing[missing > 0]
-    print(missing.info)
+class Etl:
+    def __init__(self, filename):
+        self.filename = filename
+        self.load_data(self.filename)
 
+    def load_data(self, filename: str) -> pd.DataFrame:
+        """
+        filename: name of the csv file, without extension
+        """
+        self.df = pd.read_csv(filename + ".csv")
+        self.isSale = "SalePrice" in self.df.columns
+        if self.isSale:
+            self.sale = self.df["SalePrice"]
+            self.df.drop(["SalePrice"], axis=1, inplace=True)
 
-def check_missing_columns(df):
-    # Comprobar la distribución de los valores faltantes
-    for column in df.columns:
-        if np.dtypes.ObjectDType == type(df[column].dtype):
-            if df[column].isnull().sum() > 0:
-                print(df[column].value_counts())
-                print("Vacios: ", df[column].isnull().sum())
+        return self.df
 
+    def drop_columns(self):
+        self.df.drop(['Id', 'PoolQC', 'MiscFeature', 'Alley', 'Fence',
+                      'FireplaceQu', 'MasVnrType', 'Utilities'], axis=1, inplace=True)
+        self.df.dropna(inplace=True)
 
-def normalize(df):
+    def check_missing_values(self):
+        # comprobar la cantidad de valores faltantes
 
-    # Eliminar columnas que tengan el 30% de valores faltantes
-    df.drop(['Id', 'PoolQC', 'MiscFeature', 'Alley', 'Fence',
-            'FireplaceQu', 'MasVnrType', 'Utilities'], axis=1, inplace=True)
+        missing = self.df.isna().sum().sort_values(ascending=False)
+        missing = missing[missing > 0]
+        return missing
 
-    # Imputar valores
-    imputer = SimpleImputer(strategy="most_frequent")
-    df = pd.DataFrame(imputer.fit_transform(df), columns=df.columns)
+    def check_dataset(self):
+        missing = self.check_missing_values()
 
-    # Codificar categoricas nominales
-    category_orders = {
-        'MSZoning': ['C (all)', 'RH', 'FV', 'RM', 'RL'],
-        'LandSlope': ['Sev', 'Mod', 'Gtl'],
-        'ExterQual': ['Fa', 'TA', 'Gd', 'Ex'],
-        'ExterCond': ['Po', 'Fa', 'TA', 'Gd', 'Ex'],
-        'BsmtQual': ['Fa', 'TA', 'Gd', 'Ex'],
-        'BsmtCond': ['Po', 'Fa', 'TA', 'Gd'],
-        'BsmtFinType1': ['LwQ', 'Rec', 'BLQ', 'ALQ', 'GLQ', 'Unf'],
-        'BsmtFinType2': ['GLQ', 'ALQ', 'BLQ', 'LwQ', 'Rec', 'Unf'],
-        'HeatingQC': ['Po', 'Fa', 'Gd', 'TA', 'Ex'],
-        'CentralAir': ['N', 'Y'],
-        'KitchenQual': ['Fa', 'TA', 'Gd', 'Ex'],
-        'Functional': ['Sev', 'Maj2', 'Maj1', 'Mod', 'Min1', 'Min2', 'Typ'],
-        'GarageFinish': ['Fin', 'RFn', 'Unf'],
-        'GarageQual': ['Po', 'Fa', 'TA', 'Gd', 'Ex'],
-        'GarageCond': ['Po', 'Fa', 'TA', 'Gd', 'Ex']
-    }
-    df = pd.get_dummies(df, columns=["Street", "LotShape", "LandContour", "LotConfig", "Neighborhood", "Condition1", "Condition2", "BldgType", "HouseStyle", "RoofStyle",
-                        "RoofMatl", "Exterior1st", "Exterior2nd", "Foundation", "BsmtExposure", "Heating", "Electrical", "GarageType", "PavedDrive", "SaleType", "SaleCondition"], drop_first=True)
+        print("Numero de valores faltantes: \n", missing.sum())
+        print("Cantidad de Columnas: \n", len(self.df.columns))
 
-    ordinal_columns = category_orders.keys()
-    rest_df = df.drop(ordinal_columns, axis=1)
-    encoder = OrdinalEncoder(categories=[
-                             category_orders[col] for col in df.columns if col in category_orders.keys()])
+        self.check_value_columns()
 
-    df_ordinal_encoded = pd.DataFrame(encoder.fit_transform(
-        df[ordinal_columns]), columns=ordinal_columns)
-    return pd.concat([df_ordinal_encoded, rest_df], axis=1)
+    def check_value_columns(self):
+        # Comprobar la distribución de los valores
+        for column in self.df.columns:
+            if np.dtypes.ObjectDType == type(self.df[column].dtype):
+                if self.df[column].isnull().sum() > 0:
+                    print(self.df[column].value_counts())
+                    print("Vacios: ", self.df[column].isnull().sum())
+
+    def correlation(self):
+        norm = (self.df - self.df.mean()) / self.df.std()
+        pca = PCA(n_components=10)
+        pca_result = pca.fit_transform(norm)
+
+        pca_df = pd.DataFrame(pca_result, columns=[
+                              "PCA "+str(i) for i in range(10)])
+
+        print(pca_df.isna().sum().sum())
+        correlation_matrix = pca_df.corr()
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', fmt='.2f')
+        plt.title('Matriz de Correlación')
+
+        plt.show()
+
+    def len_columns(self):
+        print(len(self.df.columns))
+
+    def save_normalized(self):
+        if self.isSale:
+            self.df["SalePrice"] = self.sale
+            self.df.to_csv(self.filename + "_normalized.csv", index=False)
+        else:
+            self.df.to_csv(self.filename + "_normalized.csv", index=False)
+
+    def normalize(self):
+
+        if os.path.isfile(self.filename + "_normalized.csv"):
+            self.df = self.load_data(self.filename + "_normalized.csv")
+
+        else:
+            category_orders = ["MSZoning", "LandSlope", "ExterQual", "ExterCond", "BsmtQual", "BsmtCond", "BsmtFinType1",
+                               "BsmtFinType2", "HeatingQC", "CentralAir", "KitchenQual", "Functional", "GarageFinish", "GarageQual", "GarageCond"]
+            nominals = ["Street", "LotShape", "LandContour", "LotConfig", "Neighborhood", "BldgType", "HouseStyle", "RoofStyle", "RoofMatl", "Exterior1st",
+                        "Exterior2nd", "Foundation", "BsmtExposure", "Heating", "Electrical", "GarageType", "PavedDrive", "SaleType", "SaleCondition", "Condition1", "Condition2"]
+
+            encoder_hot = OneHotEncoder(sparse_output=False, drop='first')
+            onehot = encoder_hot.fit_transform(self.df[nominals])
+            onehot_df = pd.DataFrame(onehot, columns=encoder_hot.get_feature_names_out(
+                nominals), index=self.df.index)
+
+            encoder_ord = OrdinalEncoder()
+            ordinal = encoder_ord.fit_transform(self.df[category_orders])
+            ordinal_df = pd.DataFrame(
+                ordinal, columns=category_orders, index=self.df.index)
+
+            self.df.drop(columns=nominals + category_orders, inplace=True)
+            self.df = pd.concat([self.df, onehot_df, ordinal_df], axis=1)
+
+            del category_orders, nominals, onehot, encoder_ord, ordinal
+
+            self.save_normalized()
 
 
 if __name__ == "__main__":
-    train_df = load_data("train.csv")
-    test_df = load_data("test.csv")
-    train_df = normalize(train_df)
-    test_df = normalize(test_df)
-    train_df.to_csv("train_normalized.csv")
-    test_df.to_csv("test_normalized.csv")
+    train = Etl("train")
+    train.drop_columns()
+    train.normalize()
+    train.check_dataset()
+    print("-" * 40)
+    test = Etl("test")
+    test.drop_columns()
+    test.normalize()
+    test.check_dataset()
+    # train.correlation()
