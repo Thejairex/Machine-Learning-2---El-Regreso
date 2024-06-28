@@ -83,7 +83,7 @@ class Etl:
     def normalize(self):
 
         if os.path.isfile(self.filename + "_normalized.csv"):
-            self.df = self.load_data(self.filename + "_normalized.csv")
+            self.df = self.load_data(self.filename)
 
         else:
             category_orders = ["MSZoning", "LandSlope", "ExterQual", "ExterCond", "BsmtQual", "BsmtCond", "BsmtFinType1",
@@ -114,9 +114,3 @@ if __name__ == "__main__":
     train.drop_columns()
     train.normalize()
     train.check_dataset()
-    print("-" * 40)
-    test = Etl("test")
-    test.drop_columns()
-    test.normalize()
-    test.check_dataset()
-    # train.correlation()
